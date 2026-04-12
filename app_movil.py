@@ -2,12 +2,19 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 from io import BytesIO
+from datetime import datetime
 
 # Configuración de la página
 st.set_page_config(page_title="SGO-H Móvil", layout="centered")
 
 def conectar():
-    return sqlite3.connect("sistema_obra.db")
+    conn = sqlite3.connect("sistema_obra.db")
+    # Esto asegura que la columna 'fecha' exista
+    try:
+        conn.execute("ALTER TABLE reportes ADD COLUMN fecha TEXT")
+    except:
+        pass # Si ya existe, no hace nada
+    return conn
 
 st.title("🚧 SGO-H: Supervisión")
 
@@ -32,6 +39,7 @@ else:
         tra = st.text_input("Tramo", value="Tramo A")
         act = st.selectbox("Actividad", ["Excavación", "Tubería", "Relleno", "Armado"])
         
+        # ... (Lógica de materiales igual que antes)
         mat = "N/A"
         if act == "Tubería":
             mat = st.selectbox("Diámetro", ['Tubo PVC 2"', 'Tubo PVC 4"', 'Tubo PVC 8"', 'Tubo PVC 12"'])
@@ -43,12 +51,15 @@ else:
         ava = st.number_input("Cantidad/Avance (m)", min_value=0.0, step=1.0)
 
         if st.button("Guardar Reporte"):
+            fecha_actual = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
             conn = conectar(); cur = conn.cursor()
-            cur.execute("INSERT INTO reportes (operador, tramo, actividad, avance) VALUES (?,?,?,?)", (ope, tra, act, ava))
+            # Guardamos la fecha junto con el reporte
+            cur.execute("INSERT INTO reportes (operador, tramo, actividad, avance, fecha) VALUES (?,?,?,?,?)", 
+                        (ope, tra, act, ava, fecha_actual))
             if mat != "N/A":
                 cur.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE material = ?", (ava, mat))
             conn.commit(); conn.close()
-            st.success(f"¡Guardado! Se descontó de {mat}")
+            st.success(f"¡Guardado el {fecha_actual}!")
 
     elif menu == "Ver Inventario":
         st.header("📦 Stock en Bodega")
@@ -60,21 +71,20 @@ else:
     elif menu == "Exportar":
         st.header("📊 Generar Reporte")
         conn = conectar()
-        df_reportes = pd.read_sql_query("SELECT * FROM reportes", conn)
+        # Ordenamos por fecha de la más reciente a la más antigua
+        df_reportes = pd.read_sql_query("SELECT fecha, operador, tramo, actividad, avance FROM reportes ORDER BY id DESC", conn)
         conn.close()
         
-        st.write("Vista previa de reportes:")
+        st.write("Reportes ordenados por fecha:")
         st.dataframe(df_reportes)
 
-        # Lógica para descargar Excel
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df_reportes.to_excel(writer, index=False, sheet_name='Reportes')
         
         st.download_button(
-            label="📥 Descargar Excel de Reportes",
+            label="📥 Descargar Excel Ordenado",
             data=output.getvalue(),
-            file_name="reporte_obra.xlsx",
+            file_name=f"reporte_obra_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-        
