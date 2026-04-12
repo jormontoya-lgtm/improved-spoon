@@ -89,12 +89,28 @@ else:
                     st.write(f"**Tramo:** {row['tramo']}")
                     st.write(f"**Avance:** {row['avance']} m")
                 with col2:
-                    if row['foto']:
-                        # Mostramos la foto guardada
-                        img_data = base64.b64decode(row['foto'])
-                        st.image(img_data, caption="Evidencia", use_container_width=True)
+                    # VALIDACIÓN MEJORADA: Solo intenta mostrar si 'foto' no es None y no está vacío
+                    if row['foto'] and str(row['foto']).strip() != "":
+                        try:
+                            img_data = base64.b64decode(row['foto'])
+                            st.image(img_data, caption="Evidencia", use_container_width=True)
+                        except:
+                            st.warning("Error al cargar esta imagen")
                     else:
-                        st.write("Sin foto")
+                        st.info("Sin foto de evidencia")
 
+        # --- SECCIÓN DE EXCEL (Asegúrate de tener este bloque al final) ---
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            # En el Excel quitamos la columna 'foto' porque el texto gigante del base64 rompe el Excel
+            df_excel = df_reportes.drop(columns=['foto'])
+            df_excel.to_excel(writer, index=False, sheet_name='Reportes')
+            
+        st.download_button(
+            label="📥 Descargar Excel (Sin fotos)",
+            data=output.getvalue(),
+            file_name=f"SGO_H_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
         # Botón de Excel (Nota: El Excel no guarda las imágenes, solo los datos)
         # ... (Aquí va la misma lógica del Excel que ya teníamos)
