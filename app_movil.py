@@ -83,21 +83,15 @@ else:
         
         for index, row in df_reportes.iterrows():
             with st.expander(f"Reporte: {row['fecha']} - {row['actividad']}"):
-                col1, col2 = st.columns([2, 1])
-                with col1:
-                    st.write(f"**Operador:** {row['operador']}")
-                    st.write(f"**Tramo:** {row['tramo']}")
-                    st.write(f"**Avance:** {row['avance']} m")
                 with col2:
-                    # VALIDACIÓN MEJORADA: Solo intenta mostrar si 'foto' no es None y no está vacío
-                    if row['foto'] and str(row['foto']).strip() != "":
+                    if row['foto'] and len(str(row['foto'])) > 100: # Si el texto es largo, es una foto real
                         try:
                             img_data = base64.b64decode(row['foto'])
                             st.image(img_data, caption="Evidencia", use_container_width=True)
                         except:
-                            st.warning("Error al cargar esta imagen")
+                            st.info("Archivo de imagen no compatible")
                     else:
-                        st.info("Sin foto de evidencia")
+                        st.info("Sin foto previa")
 
         # --- SECCIÓN DE EXCEL (Asegúrate de tener este bloque al final) ---
         output = BytesIO()
