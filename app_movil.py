@@ -9,11 +9,10 @@ st.set_page_config(page_title="SGO-H Móvil", layout="centered")
 
 def conectar():
     conn = sqlite3.connect("sistema_obra.db")
-    # Esto asegura que la columna 'fecha' exista
     try:
         conn.execute("ALTER TABLE reportes ADD COLUMN fecha TEXT")
     except:
-        pass # Si ya existe, no hace nada
+        pass 
     return conn
 
 st.title("🚧 SGO-H: Supervisión")
@@ -39,7 +38,6 @@ else:
         tra = st.text_input("Tramo", value="Tramo A")
         act = st.selectbox("Actividad", ["Excavación", "Tubería", "Relleno", "Armado"])
         
-        # ... (Lógica de materiales igual que antes)
         mat = "N/A"
         if act == "Tubería":
             mat = st.selectbox("Diámetro", ['Tubo PVC 2"', 'Tubo PVC 4"', 'Tubo PVC 8"', 'Tubo PVC 12"'])
@@ -53,7 +51,6 @@ else:
         if st.button("Guardar Reporte"):
             fecha_actual = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
             conn = conectar(); cur = conn.cursor()
-            # Guardamos la fecha junto con el reporte
             cur.execute("INSERT INTO reportes (operador, tramo, actividad, avance, fecha) VALUES (?,?,?,?,?)", 
                         (ope, tra, act, ava, fecha_actual))
             if mat != "N/A":
@@ -69,22 +66,29 @@ else:
         st.table(df)
 
     elif menu == "Exportar":
-        st.header("📊 Generar Reporte")
+        st.header("📊 Generar Reporte Completo")
         conn = conectar()
-        # Ordenamos por fecha de la más reciente a la más antigua
+        # 1. Hoja de Reportes (ordenada por fecha)
         df_reportes = pd.read_sql_query("SELECT fecha, operador, tramo, actividad, avance FROM reportes ORDER BY id DESC", conn)
+        # 2. Hoja de Inventario Actual
+        df_inv = pd.read_sql_query("SELECT * FROM inventario", conn)
+        # 3. Hoja de Resumen de Consumo (agrupado)
+        df_consumo = pd.read_sql_query("SELECT actividad, SUM(avance) as total_avance FROM reportes GROUP BY actividad", conn)
         conn.close()
         
-        st.write("Reportes ordenados por fecha:")
-        st.dataframe(df_reportes)
+        st.write("Vista previa de los últimos movimientos:")
+        st.dataframe(df_reportes.head(10))
 
+        # Crear el archivo Excel con múltiples hojas en memoria
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df_reportes.to_excel(writer, index=False, sheet_name='Reportes')
+            df_reportes.to_excel(writer, index=False, sheet_name='Reportes Diarios')
+            df_inv.to_excel(writer, index=False, sheet_name='Stock Actual')
+            df_consumo.to_excel(writer, index=False, sheet_name='Resumen Consumos')
         
         st.download_button(
-            label="📥 Descargar Excel Ordenado",
+            label="📥 Descargar Reporte Maestro (3 Hojas)",
             data=output.getvalue(),
-            file_name=f"reporte_obra_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
+            file_name=f"SGO_H_Reporte_{datetime.now().strftime('%d_%m_%Y')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
