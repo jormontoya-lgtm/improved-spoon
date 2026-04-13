@@ -63,28 +63,30 @@ if not st.session_state.autenticado:
             registrar_log(u, "Inicio de Sesión")
             st.rerun()
 else:
+    # 1. Título con nombre de usuario
     st.sidebar.title(f"👤 {st.session_state.usuario_actual.capitalize()}")
     
-    # Definimos las opciones del menú
+    # 2. Definición de las opciones del menú
     menu_opciones = ["Reportar Avance", "Entrada Almacén", "Ver Inventario", "Exportar"]
     if st.session_state.usuario_actual == "jorge":
         menu_opciones.insert(1, "Panel de Control Jorge")
     
     menu = st.sidebar.selectbox("Ir a:", menu_opciones)
     
-    # --- BOTONES DE ACCIÓN RÁPIDA EN EL SIDEBAR ---
     st.sidebar.divider()
+
+    # --- BOTONES DE ACCIÓN (AQUÍ ESTABA EL ERROR, SOLO DEBE HABER UNO) ---
     
-    # Botón de Cerrar Sesión (Para todos)
-    if st.sidebar.button("🔴 Cerrar Sesión", use_container_width=True):
+    # Botón único de Cerrar Sesión
+    if st.sidebar.button("🔴 Cerrar Sesión", use_container_width=True, key="btn_logout"):
         registrar_log(st.session_state.usuario_actual, "Cierre de Sesión")
         st.session_state.autenticado = False
         st.rerun()
 
-    # Botón de Resetear (SOLO para Jorge y visible siempre en el lateral)
+    # Botón de Resetear (Solo para Jorge)
     if st.session_state.usuario_actual == "jorge":
-        st.sidebar.subheader("⚙️ Admin")
-        if st.sidebar.button("🗑️ RESETEAR PARA JUNTA", use_container_width=True, help="Borra todos los datos"):
+        st.sidebar.subheader("⚙️ Zona Administrativa")
+        if st.sidebar.button("🗑️ RESETEAR PARA JUNTA", use_container_width=True, key="btn_reset_admin"):
             conn = conectar()
             cur = conn.cursor()
             cur.execute("DROP TABLE IF EXISTS reportes")
@@ -94,15 +96,21 @@ else:
             conn.commit()
             conn.close()
             st.rerun()
-    
-    if st.sidebar.button("🔴 Cerrar Sesión", use_container_width=True):
-        registrar_log(st.session_state.usuario_actual, "Cierre de Sesión")
-        st.session_state.autenticado = False
-        st.rerun()
 
-    # --- VISTA ESPECIFICA PARA JORGE ---
-    # --- VISTA ESPECIFICA PARA JORGE ---
-    # --- VISTA ESPECIFICA PARA JORGE ---
+    # --- LÓGICA DE LAS PÁGINAS (CONTENIDO PRINCIPAL) ---
+    
+    if menu == "Panel de Control Jorge":
+        st.header("📋 Historial de Avances")
+        conn = conectar()
+        df_jorge = pd.read_sql_query("SELECT fecha, operador, tramo, actividad, material, avance FROM reportes ORDER BY fecha DESC", conn)
+        conn.close()
+        st.dataframe(df_jorge, use_container_width=True)
+
+    elif menu == "Reportar Avance":
+        # ... (aquí va tu código de Reportar Avance que ya tienes)
+        pass 
+
+    # (Y así sucesivamente con los demás elif de tu código original...)
     if menu == "Panel de Control Jorge":
         st.header("📋 Panel Administrativo - Jorge")
         
