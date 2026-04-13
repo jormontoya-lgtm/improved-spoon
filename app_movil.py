@@ -127,4 +127,62 @@ else:
                          st.session_state.usuario_actual.capitalize(), tra, act, mat_f, ava, obs, f_str, "Original"))
             
             if mat_f != "N/A":
-                cur
+                cur.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE material = ?", (ava, mat_f))
+            conn.commit(); conn.close()
+            registrar_log(st.session_state.usuario_actual, f"Reporte en {tra}")
+            st.success("¡Reporte guardado!")
+
+    elif menu == "Entrada Almacén":
+        st.header("📥 Entrada Almacén")
+        with st.form("form_ent"):
+            mat_e = st.selectbox("Material:", ['Tubo PVC 2"', 'Tubo PVC 4"', 'Tubo PVC 6"', 'Tubo PVC 8"', 'Tubo PVC 10"', 'Tubo PVC 12"', 'Cemento (Sacos)', 'Varilla 1/2'])
+            cant_e = st.number_input("Cantidad:", min_value=0.1)
+            aut_e = st.text_input("Autoriza:")
+            ver_e = st.text_input("Verifica:")
+            enviar_e = st.form_submit_button("REGISTRAR")
+            if enviar_e:
+                conn = conectar(); cur = conn.cursor()
+                cur.execute("INSERT INTO entradas_almacen (fecha, material, cantidad, autoriza, verificado) VALUES (?,?,?,?,?)",
+                            (obtener_hora_local().strftime("%Y-%m-%d %H:%M:%S"), mat_e, cant_e, aut_e, ver_e))
+                cur.execute("UPDATE inventario SET cantidad = cantidad + ? WHERE material = ?", (cant_e, mat_e))
+                conn.commit(); conn.close()
+                registrar_log(st.session_state.usuario_actual, f"Entrada: {cant_e} de {mat_e}")
+                st.success("Stock actualizado")
+
+    elif menu == "Ver Inventario":
+        st.header("📦 Stock Actual")
+        conn = conectar(); df_inv = pd.read_sql_query("SELECT material, cantidad FROM inventario", conn); conn.close()
+        
+        # Alerta Stock Bajo
+        bajos = df_inv[df_inv['cantidad'] < STOCK_MINIMO]
+        if not bajos.empty:
+            st.error("⚠️ MATERIAL BAJO MÍNIMO")
+            st.markdown('<audio src="https://www.soundjay.com/buttons/beep-01a.mp3" autoplay></audio>', unsafe_allow_html=True)
+        
+        def resaltar(val):
+            return 'background-color: #ff4b4b; color: white' if val < STOCK_MINIMO else ''
+        
+        st.dataframe(df_inv.style.applymap(resaltar, subset=['cantidad']), use_container_width=True)
+
+    elif menu == "Exportar":
+        st.header("📊 Exportar Datos")
+        conn = conectar()
+        df_r = pd.read_sql_query("SELECT * FROM reportes", conn)
+        df_i = pd.read_sql_query("SELECT * FROM inventario", conn)
+        df_logs = pd.read_sql_query("SELECT * FROM logs", conn)
+        conn.close()
+
+        fecha_str = obtener_hora_local().strftime("%Y-%m-%d")
+
+        # Excel
+        out_ex = BytesIO()
+        with pd.ExcelWriter(out_ex, engine='openpyxl') as wr:
+            df_r.drop(columns=['fotos']).to_excel(wr, index=False, sheet_name='Reportes')
+            df_r[df_r['material'] != "N/A"][['fecha', 'material', 'avance', 'tramo']].to_excel(wr, index=False, sheet_name='Disposicion')
+        st.download_button("📥 DESCARGAR EXCEL", out_ex.getvalue(), f"Reporte_{fecha_str}.xlsx")
+
+        # Word Logs
+        doc = Document(); doc.add_heading('Logs de Actividad', 0)
+        for _, r in df_logs.iterrows(): doc.add_paragraph(f"{r['fecha']} - {r['usuario']}: {r['accion']}")
+        out_wd = BytesIO(); doc.save(out_wd)
+        st.download_button("📄 EXPORTAR LOGS (WORD)", out_wd.getvalue(), f"Logs_{fecha_str}.docx")
