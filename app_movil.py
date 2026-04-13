@@ -8,7 +8,7 @@ import base64
 # --- CONFIGURACIÓN DE USUARIOS ---
 USUARIOS_PERMITIDOS = {
     "jorge": "1234",
-    "socio": "obra2026", # Puedes crear un usuario para ellos
+    "socio": "obra2026", "Julie": "123456", "Gerardo": "123456", "Diego": "123456"  # Puedes crear un usuario para ellos
 }
 
 st.set_page_config(page_title="SGO-H Móvil", layout="centered")
