@@ -162,7 +162,7 @@ else:
         def resaltar(val):
             return 'background-color: #ff4b4b; color: white' if val < STOCK_MINIMO else ''
         
-        st.dataframe(df_inv.style.applymap(resaltar, subset=['cantidad']), use_container_width=True)
+        st.dataframe(df_inv.style.map(resaltar, subset=['cantidad']), use_container_width=True)
 
     elif menu == "Exportar":
         st.header("📊 Exportar Datos")
