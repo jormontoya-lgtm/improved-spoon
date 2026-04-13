@@ -76,12 +76,38 @@ else:
         st.rerun()
 
     # --- VISTA ESPECIFICA PARA JORGE ---
+    # --- VISTA ESPECIFICA PARA JORGE ---
     if menu == "Panel de Control Jorge":
-        st.header("📋 Historial de Avances (Orden Cronológico)")
+        st.header("📋 Panel Administrativo - Jorge")
+        
+        # --- SECCIÓN DE RESETEO (PROTEGIDA) ---
+        with st.expander("⚠️ ZONA DE PELIGRO - ACCIONES CRÍTICAS"):
+            st.warning("Al presionar el botón de abajo, se borrarán todos los reportes, entradas e inventario. Esta acción no se puede deshacer.")
+            if st.button("🗑️ RESETEAR TODO PARA JUNTA", use_container_width=True):
+                conn = conectar()
+                cur = conn.cursor()
+                cur.execute("DROP TABLE IF EXISTS reportes")
+                cur.execute("DROP TABLE IF EXISTS entradas_almacen")
+                cur.execute("DROP TABLE IF EXISTS inventario")
+                cur.execute("DROP TABLE IF EXISTS logs")
+                conn.commit()
+                conn.close()
+                registrar_log(st.session_state.usuario_actual, "RESETEO TOTAL DE BASE DE DATOS")
+                st.success("Base de datos reseteada. Reiniciando...")
+                st.rerun()
+        
+        st.divider()
+        
+        # --- TABLA DE AVANCES ---
+        st.subheader("📈 Historial de Avances (Orden Cronológico)")
         conn = conectar()
         df_jorge = pd.read_sql_query("SELECT fecha, operador, tramo, actividad, material, avance FROM reportes ORDER BY fecha DESC", conn)
         conn.close()
-        st.dataframe(df_jorge, use_container_width=True)
+        
+        if not df_jorge.empty:
+            st.dataframe(df_jorge, use_container_width=True)
+        else:
+            st.info("No hay reportes registrados aún.")
 
     if menu == "Reportar Avance":
         st.header("📝 Nuevo Reporte de Obra")
