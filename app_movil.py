@@ -14,7 +14,6 @@ st.set_page_config(page_title="SGO-H Pro", layout="centered")
 def conectar():
     conn = sqlite3.connect("sistema_obra.db")
     cur = conn.cursor()
-    # Agregamos la columna 'observaciones' a la tabla de reportes
     cur.execute('''CREATE TABLE IF NOT EXISTS reportes 
                    (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT, operador TEXT, 
                     tramo TEXT, actividad TEXT, material TEXT, avance REAL, 
@@ -79,16 +78,12 @@ else:
         elif act == "Armado": mat_f = "Varilla 1/2"
 
         ava = st.number_input("Cantidad / Metros:", min_value=0.0, step=0.1)
-        
-        # --- NUEVO CAMPO DE OBSERVACIONES ---
-        obs = st.text_area("🗒️ Observaciones o Aclaraciones", placeholder="Ej: Retraso por lluvia, cruce con fibra óptica no detectado, etc.")
-        
+        obs = st.text_area("🗒️ Observaciones", placeholder="Detalles imprevistos...")
         archivos = st.file_uploader("📸 Fotos", accept_multiple_files=True, type=['png', 'jpg', 'jpeg'])
         
         if st.button("💾 GUARDAR REPORTE", use_container_width=True):
             f_str = "|".join([base64.b64encode(a.getvalue()).decode() for a in archivos[:5]])
             conn = conectar(); cur = conn.cursor()
-            # Guardamos las observaciones en la consulta SQL
             cur.execute("""INSERT INTO reportes 
                            (fecha, operador, tramo, actividad, material, avance, observaciones, fotos, editado) 
                            VALUES (?,?,?,?,?,?,?,?,?)""", 
@@ -98,38 +93,47 @@ else:
             if mat_f != "N/A":
                 cur.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE material = ?", (ava, mat_f))
             conn.commit(); conn.close()
-            st.success("¡Reporte y observaciones guardados!")
+            st.success("¡Reporte guardado con éxito!")
 
     elif menu == "Ver Inventario":
-        st.header("📦 Stock en Tiempo Real")
+        st.header("📦 Stock Actual")
         conn = conectar(); df_inv = pd.read_sql_query("SELECT material, cantidad FROM inventario", conn); conn.close()
         st.dataframe(df_inv, use_container_width=True)
 
     elif menu == "Exportar":
         st.header("📊 Reporte Maestro")
         conn = conectar()
-        # Incluimos observaciones en la descarga de Excel
-        df_r = pd.read_sql_query("SELECT fecha, operador, tramo, actividad, material, avance, observaciones FROM reportes ORDER BY id DESC", conn)
-        df_e = pd.read_sql_query("SELECT fecha, material, cantidad, autoriza FROM entradas_almacen ORDER BY id DESC", conn)
-        df_i = pd.read_sql_query("SELECT material, cantidad FROM inventario", conn)
+        # Traemos todas las columnas incluyendo 'fotos'
+        df_r = pd.read_sql_query("SELECT * FROM reportes ORDER BY id DESC", conn)
+        df_e = pd.read_sql_query("SELECT * FROM entradas_almacen ORDER BY id DESC", conn)
+        df_i = pd.read_sql_query("SELECT * FROM inventario", conn)
         conn.close()
 
-        if df_r.empty and df_e.empty:
-            st.warning("No hay datos para exportar.")
+        if df_r.empty:
+            st.warning("No hay reportes para mostrar fotos.")
         else:
-            st.markdown(f"**Generado por:** {st.session_state.usuario_actual.capitalize()}")
+            # Botón de Descarga Excel (Sin fotos para que no pese)
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df_r.to_excel(writer, index=False, sheet_name='Bitácora_Con_Obs')
-                df_e.to_excel(writer, index=False, sheet_name='Entradas')
-                df_i.to_excel(writer, index=False, sheet_name='Inventario_Final')
-            
-            st.download_button("📥 DESCARGAR EXCEL COMPLETO", output.getvalue(), "Reporte_SGO_H_Final.xlsx", use_container_width=True)
-            
-            # Mostrar las observaciones también en la App para revisión rápida
-            if not df_r.empty:
-                st.subheader("👀 Revisión de Comentarios Recientes")
-                for _, row in df_r.head(3).iterrows():
+                df_r.drop(columns=['fotos']).to_excel(writer, index=False, sheet_name='Bitácora')
+                df_i.to_excel(writer, index=False, sheet_name='Stock')
+            st.download_button("📥 DESCARGAR EXCEL", output.getvalue(), "Reporte_Obra.xlsx", use_container_width=True)
+
+            # --- GALERÍA DE IMÁGENES REPARADA ---
+            st.divider()
+            st.subheader("🖼️ Galería de Evidencias Recientes")
+            for _, row in df_r.head(10).iterrows():
+                with st.expander(f"📅 {row['fecha']} - {row['actividad']} ({row['operador']})"):
                     if row['observaciones']:
-                        st.write(f"**{row['fecha']} ({row['operador']}):** {row['observaciones']}")
-                        
+                        st.info(f"**Observaciones:** {row['observaciones']}")
+                    
+                    if row['fotos'] and len(row['fotos']) > 10: # Verificamos que no esté vacío
+                        imgs = row['fotos'].split("|")
+                        cols = st.columns(len(imgs))
+                        for idx, img_base64 in enumerate(imgs):
+                            try:
+                                cols[idx].image(base64.b64decode(img_base64), use_container_width=True)
+                            except:
+                                continue
+                    else:
+                        st.write("No se subieron fotos en este reporte.")
