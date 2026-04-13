@@ -77,6 +77,7 @@ else:
 
     # --- VISTA ESPECIFICA PARA JORGE ---
     # --- VISTA ESPECIFICA PARA JORGE ---
+    # --- VISTA ESPECIFICA PARA JORGE ---
     if menu == "Panel de Control Jorge":
         st.header("📋 Panel Administrativo - Jorge")
         
@@ -95,6 +96,19 @@ else:
                 registrar_log(st.session_state.usuario_actual, "RESETEO TOTAL DE BASE DE DATOS")
                 st.success("Base de datos reseteada. Reiniciando...")
                 st.rerun()
+        
+        st.divider()
+        
+        # --- TABLA DE AVANCES ---
+        st.subheader("📈 Historial de Avances (Orden Cronológico)")
+        conn = conectar()
+        df_jorge = pd.read_sql_query("SELECT fecha, operador, tramo, actividad, material, avance FROM reportes ORDER BY fecha DESC", conn)
+        conn.close()
+        
+        if not df_jorge.empty:
+            st.dataframe(df_jorge, use_container_width=True)
+        else:
+            st.info("No hay reportes registrados aún.")
         
         st.divider()
         
