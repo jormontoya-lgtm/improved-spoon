@@ -14,9 +14,11 @@ st.set_page_config(page_title="SGO-H Pro", layout="centered")
 def conectar():
     conn = sqlite3.connect("sistema_obra.db")
     cur = conn.cursor()
+    # Agregamos la columna 'observaciones' a la tabla de reportes
     cur.execute('''CREATE TABLE IF NOT EXISTS reportes 
                    (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT, operador TEXT, 
-                    tramo TEXT, actividad TEXT, material TEXT, avance REAL, fotos TEXT, editado TEXT)''')
+                    tramo TEXT, actividad TEXT, material TEXT, avance REAL, 
+                    observaciones TEXT, fotos TEXT, editado TEXT)''')
     cur.execute('''CREATE TABLE IF NOT EXISTS entradas_almacen 
                    (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT, material TEXT, cantidad REAL, 
                     autoriza TEXT, verificado TEXT, fotos TEXT)''')
@@ -48,7 +50,6 @@ if not st.session_state.autenticado:
             st.session_state.usuario_actual = u
             st.rerun()
 else:
-    # --- MENÚ LATERAL ---
     st.sidebar.title(f"👤 {st.session_state.usuario_actual.capitalize()}")
     menu = st.sidebar.selectbox("Ir a:", ["Reportar Avance", "Entrada Almacén", "Ver Inventario", "Exportar"])
     
@@ -65,10 +66,9 @@ else:
             conn.commit(); conn.close()
             st.rerun()
 
-    # --- REPORTAR AVANCE (Lógica de Salida) ---
     if menu == "Reportar Avance":
         st.header("📝 Nuevo Reporte de Obra")
-        st.info(f"👷 **Operador Activo:** {st.session_state.usuario_actual.capitalize()}")
+        st.info(f"👷 **Operador:** {st.session_state.usuario_actual.capitalize()}")
         tra = st.text_input("Tramo / Ubicación")
         act = st.selectbox("Actividad", ["Excavación", "Instalación de Tubería", "Relleno", "Armado"])
         
@@ -79,74 +79,57 @@ else:
         elif act == "Armado": mat_f = "Varilla 1/2"
 
         ava = st.number_input("Cantidad / Metros:", min_value=0.0, step=0.1)
+        
+        # --- NUEVO CAMPO DE OBSERVACIONES ---
+        obs = st.text_area("🗒️ Observaciones o Aclaraciones", placeholder="Ej: Retraso por lluvia, cruce con fibra óptica no detectado, etc.")
+        
         archivos = st.file_uploader("📸 Fotos", accept_multiple_files=True, type=['png', 'jpg', 'jpeg'])
         
         if st.button("💾 GUARDAR REPORTE", use_container_width=True):
             f_str = "|".join([base64.b64encode(a.getvalue()).decode() for a in archivos[:5]])
             conn = conectar(); cur = conn.cursor()
-            cur.execute("INSERT INTO reportes (fecha, operador, tramo, actividad, material, avance, fotos, editado) VALUES (?,?,?,?,?,?,?,?)", 
-                        (obtener_hora_local().strftime("%Y-%m-%d %H:%M:%S"), st.session_state.usuario_actual.capitalize(), tra, act, mat_f, ava, f_str, "Original"))
+            # Guardamos las observaciones en la consulta SQL
+            cur.execute("""INSERT INTO reportes 
+                           (fecha, operador, tramo, actividad, material, avance, observaciones, fotos, editado) 
+                           VALUES (?,?,?,?,?,?,?,?,?)""", 
+                        (obtener_hora_local().strftime("%Y-%m-%d %H:%M:%S"), 
+                         st.session_state.usuario_actual.capitalize(), tra, act, mat_f, ava, obs, f_str, "Original"))
+            
             if mat_f != "N/A":
                 cur.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE material = ?", (ava, mat_f))
             conn.commit(); conn.close()
-            st.success("¡Reporte enviado exitosamente!")
+            st.success("¡Reporte y observaciones guardados!")
 
-    # --- ENTRADA ALMACÉN ---
-    elif menu == "Entrada Almacén":
-        st.header("📥 Entrada de Material")
-        conn = conectar()
-        mats = pd.read_sql_query("SELECT material FROM inventario", conn)['material'].tolist()
-        conn.close()
-        m_sel = st.selectbox("Material:", mats)
-        c_ent = st.number_input("Cantidad:", min_value=0.0)
-        aut = st.text_input("Autoriza:")
-        if st.button("➕ REGISTRAR"):
-            conn = conectar(); cur = conn.cursor()
-            cur.execute("INSERT INTO entradas_almacen (fecha, material, cantidad, autoriza, verificado) VALUES (?,?,?,?,?)",
-                        (obtener_hora_local().strftime("%Y-%m-%d %H:%M:%S"), m_sel, c_ent, aut, "SÍ"))
-            cur.execute("UPDATE inventario SET cantidad = cantidad + ? WHERE material = ?", (c_ent, m_sel))
-            conn.commit(); conn.close()
-            st.success("Almacén actualizado.")
-
-    # --- VER INVENTARIO ---
     elif menu == "Ver Inventario":
         st.header("📦 Stock en Tiempo Real")
-        conn = conectar()
-        df_inv = pd.read_sql_query("SELECT material, cantidad FROM inventario", conn)
-        conn.close()
+        conn = conectar(); df_inv = pd.read_sql_query("SELECT material, cantidad FROM inventario", conn); conn.close()
         st.dataframe(df_inv, use_container_width=True)
 
-    # --- EXPORTAR (Reporte Maestro con Texto) ---
     elif menu == "Exportar":
-        st.header("📊 Reporte Maestro de Gestión")
-        
-        # TEXTO DE BIENVENIDA PERSONALIZADO
-        st.markdown(f"""
-        ### Documento de Control de Obra SGO-H
-        Este reporte contiene la bitácora detallada de avances, entradas de almacén y el estado actual de los inventarios.
-        **Generado por:** {st.session_state.usuario_actual.capitalize()}  
-        **Fecha de consulta:** {obtener_hora_local().strftime('%d/%m/%Y %H:%M')}
-        """)
-        
+        st.header("📊 Reporte Maestro")
         conn = conectar()
-        df_r = pd.read_sql_query("SELECT fecha, operador, tramo, actividad, material, avance FROM reportes ORDER BY id DESC", conn)
+        # Incluimos observaciones en la descarga de Excel
+        df_r = pd.read_sql_query("SELECT fecha, operador, tramo, actividad, material, avance, observaciones FROM reportes ORDER BY id DESC", conn)
         df_e = pd.read_sql_query("SELECT fecha, material, cantidad, autoriza FROM entradas_almacen ORDER BY id DESC", conn)
         df_i = pd.read_sql_query("SELECT material, cantidad FROM inventario", conn)
         conn.close()
 
         if df_r.empty and df_e.empty:
-            st.warning("⚠️ No hay datos registrados todavía. Por favor, genera un nuevo reporte o entrada primero.")
+            st.warning("No hay datos para exportar.")
         else:
-            # Mostrar resumen visual antes de descargar
-            if not df_r.empty:
-                st.subheader("📝 Últimos Avances")
-                st.table(df_r.head(5))
-            
+            st.markdown(f"**Generado por:** {st.session_state.usuario_actual.capitalize()}")
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df_r.to_excel(writer, index=False, sheet_name='Avances')
+                df_r.to_excel(writer, index=False, sheet_name='Bitácora_Con_Obs')
                 df_e.to_excel(writer, index=False, sheet_name='Entradas')
-                df_i.to_excel(writer, index=False, sheet_name='Stock')
+                df_i.to_excel(writer, index=False, sheet_name='Inventario_Final')
             
-            st.divider()
-            st.download_button("📥 DESCARGAR REPORTE EXCEL COMPLETO", output.getvalue(), "Reporte_SGO_H.xlsx", use_container_width=True)
+            st.download_button("📥 DESCARGAR EXCEL COMPLETO", output.getvalue(), "Reporte_SGO_H_Final.xlsx", use_container_width=True)
+            
+            # Mostrar las observaciones también en la App para revisión rápida
+            if not df_r.empty:
+                st.subheader("👀 Revisión de Comentarios Recientes")
+                for _, row in df_r.head(3).iterrows():
+                    if row['observaciones']:
+                        st.write(f"**{row['fecha']} ({row['operador']}):** {row['observaciones']}")
+                        
