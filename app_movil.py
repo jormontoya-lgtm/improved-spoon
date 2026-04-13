@@ -18,7 +18,6 @@ def conectar():
                     tramo TEXT, actividad TEXT, avance REAL, fotos TEXT, editado TEXT)''')
     cur.execute('''CREATE TABLE IF NOT EXISTS inventario 
                    (id INTEGER PRIMARY KEY AUTOINCREMENT, material TEXT, cantidad REAL)''')
-    # Inicializar materiales si la tabla está vacía
     cur.execute("SELECT COUNT(*) FROM inventario")
     if cur.fetchone()[0] == 0:
         mats = [('Tubo PVC 2"', 100), ('Tubo PVC 4"', 100), ('Cemento (Sacos)', 100), ('Varilla 1/2', 100)]
@@ -46,19 +45,14 @@ if not st.session_state.autenticado:
 else:
     # --- MENÚ LATERAL ---
     st.sidebar.title(f"👤 {st.session_state.usuario_actual.capitalize()}")
-    
-    # REINCORPORADA LA OPCIÓN DE ENTRADA ALMACÉN
     menu = st.sidebar.selectbox("Ir a:", ["Reportar Avance", "Entrada Almacén", "Editar (24h)", "Ver Inventario", "Exportar"])
     
     st.sidebar.divider()
-    
     if st.sidebar.button("🔴 Cerrar Sesión", use_container_width=True):
         st.session_state.autenticado = False
-        st.session_state.usuario_actual = ""
         st.rerun()
 
     if st.session_state.usuario_actual == "jorge":
-        st.sidebar.divider()
         if st.sidebar.button("🗑️ RESETEAR PARA JUNTA", use_container_width=True):
             conn = conectar(); cur = conn.cursor()
             cur.execute("DROP TABLE IF EXISTS reportes")
@@ -66,11 +60,19 @@ else:
             conn.commit(); conn.close()
             st.rerun()
 
-    # --- LÓGICA DE SECCIONES ---
+    # --- SECCIONES ---
     if menu == "Reportar Avance":
         st.header("📝 Nuevo Reporte")
+        # Mostramos quién está reportando de forma visible
+        st.info(f"👷 **Operador:** {st.session_state.usuario_actual.capitalize()}")
+        
         tra = st.text_input("Tramo")
         act = st.selectbox("Actividad", ["Excavación", "Tubería", "Relleno", "Armado"])
+        
+        mat_afectado = "N/A"
+        if act == "Tubería": mat_afectado = 'Tubo PVC 4"'
+        elif act == "Relleno": mat_afectado = "Cemento (Sacos)"
+
         ava = st.number_input("Avance (m/pzas)", min_value=0.0, step=0.1)
         
         st.subheader("📸 Evidencias (Máx 5)")
@@ -81,43 +83,49 @@ else:
             fotos_string = "|".join(fotos_list)
             conn = conectar(); cur = conn.cursor()
             cur.execute("INSERT INTO reportes (fecha, operador, tramo, actividad, avance, fotos, editado) VALUES (?,?,?,?,?,?,?)", 
-                        (obtener_hora_local().strftime("%Y-%m-%d %H:%M:%S"), st.session_state.usuario_actual, tra, act, ava, fotos_string, "Original"))
+                        (obtener_hora_local().strftime("%Y-%m-%d %H:%M:%S"), st.session_state.usuario_actual.capitalize(), tra, act, ava, fotos_string, "Original"))
+            if mat_afectado != "N/A":
+                cur.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE material = ?", (ava, mat_afectado))
             conn.commit(); conn.close()
             st.success("¡Reporte guardado!")
 
     elif menu == "Entrada Almacén":
         st.header("📥 Entrada de Material")
         conn = conectar()
-        mats_df = pd.read_sql_query("SELECT material FROM inventario", conn)
+        mats = pd.read_sql_query("SELECT material FROM inventario", conn)['material'].tolist()
         conn.close()
-        mat_sel = st.selectbox("Selecciona material:", mats_df['material'].tolist())
-        cant_nueva = st.number_input("Cantidad que ingresa:", min_value=0.0, step=1.0)
-        
-        if st.button("➕ AGREGAR AL STOCK", use_container_width=True):
+        m_sel = st.selectbox("Material:", mats)
+        c_ent = st.number_input("Cantidad:", min_value=0.0)
+        if st.button("➕ AGREGAR", use_container_width=True):
             conn = conectar(); cur = conn.cursor()
-            cur.execute("UPDATE inventario SET cantidad = cantidad + ? WHERE material = ?", (cant_nueva, mat_sel))
+            cur.execute("UPDATE inventario SET cantidad = cantidad + ? WHERE material = ?", (c_ent, m_sel))
             conn.commit(); conn.close()
-            st.success(f"Stock de {mat_sel} actualizado correctamente.")
+            st.success("Inventario actualizado")
 
     elif menu == "Ver Inventario":
-        st.header("📦 Stock Actual")
+        st.header("📦 Stock")
         conn = conectar()
-        df_inv = pd.read_sql_query("SELECT material, cantidad FROM inventario", conn)
+        df = pd.read_sql_query("SELECT material, cantidad FROM inventario", conn)
         conn.close()
-        st.table(df_inv)
-
-    elif menu == "Editar (24h)":
-        st.header("✏️ Corrección de Reportes")
-        # Aquí va la lógica de edición que ya teníamos...
-        st.info("Función habilitada para reportes recientes.")
+        st.table(df)
 
     elif menu == "Exportar":
         st.header("📊 Reporte Maestro")
         conn = conectar()
-        df = pd.read_sql_query("SELECT * FROM reportes ORDER BY id DESC", conn)
+        df_r = pd.read_sql_query("SELECT fecha, operador, tramo, actividad, avance, editado, fotos FROM reportes ORDER BY id DESC", conn)
         conn.close()
-        if not df.empty:
+        if not df_r.empty:
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.drop(columns=['fotos']).to_excel(writer, index=False, sheet_name='Bitácora')
-            st.download_button("📥 DESCARGAR EXCEL", output.getvalue(), "Reporte_Obra.xlsx", use_container_width=True)
+                df_r.drop(columns=['fotos']).to_excel(writer, index=False, sheet_name='Bitácora')
+            st.download_button("📥 DESCARGAR EXCEL", output.getvalue(), "Reporte.xlsx", use_container_width=True)
+            
+            for _, row in df_r.head(5).iterrows():
+                with st.expander(f"{row['fecha']} - {row['actividad']} ({row['operador']})"):
+                    st.write(f"**Avance:** {row['avance']}m")
+                    if row['fotos']:
+                        try:
+                            lista_f = row['fotos'].split("|")
+                            cols = st.columns(len(lista_f))
+                            for i, f in enumerate(lista_f): cols[i].image(base64.b64decode(f))
+                        except: pass
