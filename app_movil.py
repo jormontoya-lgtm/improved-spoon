@@ -2,7 +2,7 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 from io import BytesIO
-from datetime import datetime
+from datetime import datetime, timedelta
 import base64
 
 # Configuración de página
@@ -17,6 +17,10 @@ def conectar():
         conn.execute("ALTER TABLE reportes ADD COLUMN foto TEXT")
     except: pass
     return conn
+
+# Función para obtener la hora real de tu zona (México -6)
+def obtener_hora_local():
+    return (datetime.utcnow() - timedelta(hours=6)).strftime("%d/%m/%Y %H:%M:%S")
 
 st.title("🚧 SGO-H: Supervisión")
 
@@ -48,22 +52,21 @@ else:
         elif act == "Armado": mat = "Varilla 1/2"
 
         ava = st.number_input("Cantidad/Avance (m)", min_value=0.0, step=1.0)
-        archivo_foto = st.camera_input("Tomar foto de la evidencia")
+        archivo_foto = st.camera_input("Tomar foto")
         
         foto_base64 = ""
         if archivo_foto:
-            bytes_data = archivo_foto.getvalue()
-            foto_base64 = base64.b64encode(bytes_data).decode()
+            foto_base64 = base64.b64encode(archivo_foto.getvalue()).decode()
 
-        if st.button("Guardar Reporte", use_container_width=True):
-            fecha_actual = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        if st.button("💾 GUARDAR REPORTE", use_container_width=True):
+            fecha_local = obtener_hora_local()
             conn = conectar(); cur = conn.cursor()
             cur.execute("INSERT INTO reportes (operador, tramo, actividad, avance, fecha, foto) VALUES (?,?,?,?,?,?)", 
-                        (ope, tra, act, ava, fecha_actual, foto_base64))
+                        (ope, tra, act, ava, fecha_local, foto_base64))
             if mat != "N/A":
                 cur.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE material = ?", (ava, mat))
             conn.commit(); conn.close()
-            st.success("¡Reporte Guardado!")
+            st.success(f"¡Guardado correctamente a las {fecha_local}!")
 
     elif menu == "Ver Inventario":
         st.header("📦 Stock en Bodega")
@@ -73,41 +76,37 @@ else:
         st.table(df)
 
     elif menu == "Exportar":
-        st.header("📊 Reporte y Descarga")
+        st.header("📊 Reporte Maestro")
         conn = conectar()
         df_reportes = pd.read_sql_query("SELECT * FROM reportes ORDER BY id DESC", conn)
         df_inv = pd.read_sql_query("SELECT * FROM inventario", conn)
+        # Resumen de consumo
+        df_consumo = pd.read_sql_query("SELECT actividad, SUM(avance) as total FROM reportes GROUP BY actividad", conn)
         conn.close()
         
-        # --- BOTÓN DE DESCARGA OPTIMIZADO PARA MÓVIL ---
+        # --- GENERAR EXCEL CON 3 HOJAS ---
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            # Quitamos la columna 'foto' para el Excel para que no pese y no falle el móvil
-            df_excel = df_reportes.drop(columns=['foto']) if 'foto' in df_reportes.columns else df_reportes
-            df_excel.to_excel(writer, index=False, sheet_name='Reportes')
-            df_inv.to_excel(writer, index=False, sheet_name='Stock')
+            # Quitamos la foto para que el Excel no sea gigante y no falle el móvil
+            df_rep_sin_foto = df_reportes.drop(columns=['foto']) if 'foto' in df_reportes.columns else df_reportes
+            df_rep_sin_foto.to_excel(writer, index=False, sheet_name='Reportes Diarios')
+            df_inv.to_excel(writer, index=False, sheet_name='Stock Actual')
+            df_consumo.to_excel(writer, index=False, sheet_name='Consumo Acumulado')
         
         st.download_button(
-            label="📥 DESCARGAR EXCEL AQUÍ",
+            label="📥 DESCARGAR EXCEL (3 HOJAS)",
             data=output.getvalue(),
-            file_name=f"Reporte_{datetime.now().strftime('%d_%m')}.xlsx",
+            file_name=f"SGO_Reporte_{datetime.now().strftime('%d_%m')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
         
         st.divider()
-        st.write("### Evidencia Fotográfica")
-        
-        for index, row in df_reportes.iterrows():
-            with st.expander(f"📅 {row['fecha']} - {row['actividad']}"):
-                st.write(f"**Tramo:** {row['tramo']} | **Avance:** {row['avance']}m")
-                # Verificación de foto
-                foto_data = row.get('foto')
-                if foto_data and len(str(foto_data)) > 100:
-                    try:
-                        img_bytes = base64.b64decode(foto_data)
-                        st.image(img_bytes, use_container_width=True)
-                    except:
-                        st.info("Imagen no disponible")
+        st.subheader("📸 Evidencia en Sistema")
+        for _, row in df_reportes.head(10).iterrows(): # Mostramos los últimos 10
+            with st.expander(f"Reporte: {row['fecha']} - {row['actividad']}"):
+                st.write(f"**Operador:** {row['operador']} | **Tramo:** {row['tramo']} | **Avance:** {row['avance']}m")
+                if row.get('foto') and len(str(row['foto'])) > 100:
+                    st.image(base64.b64decode(row['foto']), use_container_width=True)
                 else:
-                    st.caption("Sin foto de evidencia")
+                    st.caption("Sin foto")
