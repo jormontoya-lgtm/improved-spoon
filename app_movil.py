@@ -7,17 +7,22 @@ import base64
 
 # --- CONFIGURACIÓN ---
 USUARIOS_PERMITIDOS = {"jorge": "1234", "supervisor": "obra2026"}
+STOCK_MINIMO = 20  # Nivel para generar alerta de compra
+
 st.set_page_config(page_title="SGO-H Pro", layout="centered")
 
 def conectar():
     conn = sqlite3.connect("sistema_obra.db")
     cur = conn.cursor()
+    # Tabla de reportes (Salidas de material implícitas)
     cur.execute('''CREATE TABLE IF NOT EXISTS reportes 
                    (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT, operador TEXT, 
                     tramo TEXT, actividad TEXT, avance REAL, fotos TEXT, editado TEXT)''')
+    # Tabla de entradas
     cur.execute('''CREATE TABLE IF NOT EXISTS entradas_almacen 
                    (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT, material TEXT, cantidad REAL, 
                     autoriza TEXT, verificado TEXT, fotos TEXT)''')
+    # Tabla de stock
     cur.execute('''CREATE TABLE IF NOT EXISTS inventario 
                    (id INTEGER PRIMARY KEY AUTOINCREMENT, material TEXT, cantidad REAL)''')
     
@@ -44,6 +49,7 @@ if not st.session_state.autenticado:
             st.session_state.usuario_actual = u
             st.rerun()
 else:
+    # --- MENÚ LATERAL ---
     st.sidebar.title(f"👤 {st.session_state.usuario_actual.capitalize()}")
     menu = st.sidebar.selectbox("Ir a:", ["Reportar Avance", "Entrada Almacén", "Ver Inventario", "Exportar"])
     
@@ -60,85 +66,83 @@ else:
             conn.commit(); conn.close()
             st.rerun()
 
-    # --- LÓGICA DE SECCIONES ---
+    # --- SECCIÓN: REPORTAR AVANCE (SALIDAS) ---
     if menu == "Reportar Avance":
-        st.header("📝 Nuevo Reporte de Obra")
+        st.header("📝 Nuevo Reporte (Salida de Material)")
         st.info(f"👷 **Operador:** {st.session_state.usuario_actual.capitalize()}")
         tra = st.text_input("Tramo")
         act = st.selectbox("Actividad", ["Excavación", "Tubería", "Relleno", "Armado"])
-        ava = st.number_input("Avance (m/pzas)", min_value=0.0, step=0.1)
+        ava = st.number_input("Avance / Material usado:", min_value=0.0, step=0.1)
         
-        # Descuento automático de inventario
-        mat_afectado = "N/A"
-        if act == "Tubería": mat_afectado = 'Tubo PVC 4"'
-        elif act == "Relleno": mat_afectado = "Cemento (Sacos)"
+        # Lógica de qué material se gasta según la actividad
+        mat_f = None
+        if act == "Tubería": mat_f = 'Tubo PVC 4"'
+        elif act == "Relleno": mat_f = "Cemento (Sacos)"
+        elif act == "Armado": mat_f = "Varilla 1/2"
 
-        archivos = st.file_uploader("📸 Fotos de evidencia (Máx 5)", accept_multiple_files=True, type=['png', 'jpg', 'jpeg'])
+        archivos = st.file_uploader("📸 Evidencias", accept_multiple_files=True, type=['png', 'jpg', 'jpeg'])
         
-        if st.button("💾 GUARDAR REPORTE", use_container_width=True):
-            fotos_list = [base64.b64encode(a.getvalue()).decode() for a in archivos[:5]]
-            fotos_string = "|".join(fotos_list)
+        if st.button("💾 GUARDAR Y DESCUENTAR", use_container_width=True):
             conn = conectar(); cur = conn.cursor()
+            f_str = "|".join([base64.b64encode(a.getvalue()).decode() for a in archivos[:5]])
+            
+            # Guardar reporte (que sirve como historial de salida)
             cur.execute("INSERT INTO reportes (fecha, operador, tramo, actividad, avance, fotos, editado) VALUES (?,?,?,?,?,?,?)", 
-                        (obtener_hora_local().strftime("%Y-%m-%d %H:%M:%S"), st.session_state.usuario_actual.capitalize(), tra, act, ava, fotos_string, "Original"))
-            if mat_afectado != "N/A":
-                cur.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE material = ?", (ava, mat_afectado))
+                        (obtener_hora_local().strftime("%Y-%m-%d %H:%M:%S"), st.session_state.usuario_actual.capitalize(), tra, act, ava, f_str, "Original"))
+            
+            # Descontar del inventario
+            if mat_f:
+                cur.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE material = ?", (ava, mat_f))
+                st.success(f"Se descontaron {ava} de {mat_f}")
+            
             conn.commit(); conn.close()
-            st.success("¡Reporte y Stock actualizados!")
+            st.success("Reporte guardado con éxito.")
 
     elif menu == "Entrada Almacén":
         st.header("📥 Entrada de Material")
         conn = conectar()
         mats = pd.read_sql_query("SELECT material FROM inventario", conn)['material'].tolist()
         conn.close()
-        
         m_sel = st.selectbox("Material:", mats)
         c_ent = st.number_input("Cantidad:", min_value=0.0)
-        aut = st.text_input("¿Quién autoriza?")
-        verif = st.checkbox("✅ ¿Material verificado?")
-        fotos_e = st.file_uploader("📸 Foto de remisión/material", accept_multiple_files=True, type=['png', 'jpg', 'jpeg'])
-
-        if st.button("➕ REGISTRAR ENTRADA", use_container_width=True):
-            f_str = "|".join([base64.b64encode(a.getvalue()).decode() for a in fotos_e[:5]])
+        aut = st.text_input("Autoriza:")
+        
+        if st.button("➕ REGISTRAR", use_container_width=True):
             conn = conectar(); cur = conn.cursor()
-            cur.execute("INSERT INTO entradas_almacen (fecha, material, cantidad, autoriza, verificado, fotos) VALUES (?,?,?,?,?,?)",
-                        (obtener_hora_local().strftime("%Y-%m-%d %H:%M:%S"), m_sel, c_ent, aut, "SÍ" if verif else "NO", f_str))
+            cur.execute("INSERT INTO entradas_almacen (fecha, material, cantidad, autoriza, verificado) VALUES (?,?,?,?,?)",
+                        (obtener_hora_local().strftime("%Y-%m-%d %H:%M:%S"), m_sel, c_ent, aut, "SÍ"))
             cur.execute("UPDATE inventario SET cantidad = cantidad + ? WHERE material = ?", (c_ent, m_sel))
             conn.commit(); conn.close()
-            st.success("Entrada registrada con éxito.")
+            st.success("Entrada registrada.")
 
     elif menu == "Ver Inventario":
-        st.header("📦 Stock Actual en Bodega")
+        st.header("📦 Estado del Almacén")
         conn = conectar()
-        df_inv = pd.read_sql_query("SELECT material as 'Material', cantidad as 'Existencia' FROM inventario", conn)
+        df_inv = pd.read_sql_query("SELECT material as Material, cantidad as Existencia FROM inventario", conn)
         conn.close()
-        st.dataframe(df_inv, use_container_width=True)
+        
+        # Alerta visual en la App
+        for _, row in df_inv.iterrows():
+            if row['Existencia'] <= STOCK_MINIMO:
+                st.warning(f"⚠️ **COMPRAR YA:** {row['Material']} (Solo quedan {row['Existencia']})")
+        
+        st.table(df_inv)
 
     elif menu == "Exportar":
-        st.header("📊 Reporte Maestro para Socios")
+        st.header("📊 Reporte Maestro")
         conn = conectar()
-        df_r = pd.read_sql_query("SELECT fecha, operador, tramo, actividad, avance, editado, fotos FROM reportes ORDER BY id DESC", conn)
-        df_e = pd.read_sql_query("SELECT fecha, material, cantidad, autoriza, verificado FROM entradas_almacen ORDER BY id DESC", conn)
-        df_inv = pd.read_sql_query("SELECT material, cantidad FROM inventario", conn)
+        df_avances = pd.read_sql_query("SELECT fecha, operador, tramo, actividad, avance as cantidad_usada FROM reportes", conn)
+        df_entradas = pd.read_sql_query("SELECT fecha, material, cantidad, autoriza FROM entradas_almacen", conn)
+        df_stock = pd.read_sql_query("SELECT material, cantidad FROM inventario", conn)
         conn.close()
         
-        # EXCEL CON 3 HOJAS (Aquí corregimos lo que faltaba)
+        # Crear la alerta en el Excel
+        df_stock['Estado'] = df_stock['cantidad'].apply(lambda x: 'COMPRAR' if x <= STOCK_MINIMO else 'OK')
+
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            if not df_r.empty:
-                df_r.drop(columns=['fotos']).to_excel(writer, index=False, sheet_name='Bitácora_Avances')
-            if not df_e.empty:
-                df_e.to_excel(writer, index=False, sheet_name='Historial_Entradas')
-            df_inv.to_excel(writer, index=False, sheet_name='STOCK_ACTUAL')
+            df_avances.to_excel(writer, index=False, sheet_name='Historial_Salidas_Obra')
+            df_entradas.to_excel(writer, index=False, sheet_name='Historial_Entradas_Bodega')
+            df_stock.to_excel(writer, index=False, sheet_name='STOCK_ACTUAL_ALERTAS')
         
-        st.download_button("📥 DESCARGAR REPORTE COMPLETO", output.getvalue(), "Control_SGO_H.xlsx", use_container_width=True)
-        
-        # Visualización de fotos en la App (Trazabilidad visual)
-        st.divider()
-        st.subheader("👁️ Vista Previa de Evidencias")
-        for _, row in df_r.head(5).iterrows():
-            with st.expander(f"Reporte {row['fecha']} - {row['actividad']}"):
-                if row['fotos']:
-                    imgs = row['fotos'].split("|")
-                    c = st.columns(len(imgs))
-                    for i, img in enumerate(imgs): c[i].image(base64.b64decode(img))
+        st.download_button("📥 DESCARGAR CONTROL TOTAL", output.getvalue(), "Control_Obra_SGO.xlsx", use_container_width=True)
