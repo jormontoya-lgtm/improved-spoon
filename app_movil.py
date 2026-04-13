@@ -7,7 +7,7 @@ import base64
 from docx import Document # Necesitarás instalar: pip install python-docx
 
 # --- CONFIGURACIÓN ---
-USUARIOS_PERMITIDOS = {"Jorge": "1234", "supervisor": "obra2026"}
+USUARIOS_PERMITIDOS = {"jorge": "1234", "supervisor": "obra2026"}
 STOCK_MINIMO = 20 
 
 st.set_page_config(page_title="SGO-H Pro", layout="centered")
