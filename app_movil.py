@@ -64,11 +64,36 @@ if not st.session_state.autenticado:
             st.rerun()
 else:
     st.sidebar.title(f"👤 {st.session_state.usuario_actual.capitalize()}")
+    
+    # Definimos las opciones del menú
     menu_opciones = ["Reportar Avance", "Entrada Almacén", "Ver Inventario", "Exportar"]
     if st.session_state.usuario_actual == "jorge":
         menu_opciones.insert(1, "Panel de Control Jorge")
     
     menu = st.sidebar.selectbox("Ir a:", menu_opciones)
+    
+    # --- BOTONES DE ACCIÓN RÁPIDA EN EL SIDEBAR ---
+    st.sidebar.divider()
+    
+    # Botón de Cerrar Sesión (Para todos)
+    if st.sidebar.button("🔴 Cerrar Sesión", use_container_width=True):
+        registrar_log(st.session_state.usuario_actual, "Cierre de Sesión")
+        st.session_state.autenticado = False
+        st.rerun()
+
+    # Botón de Resetear (SOLO para Jorge y visible siempre en el lateral)
+    if st.session_state.usuario_actual == "jorge":
+        st.sidebar.subheader("⚙️ Admin")
+        if st.sidebar.button("🗑️ RESETEAR PARA JUNTA", use_container_width=True, help="Borra todos los datos"):
+            conn = conectar()
+            cur = conn.cursor()
+            cur.execute("DROP TABLE IF EXISTS reportes")
+            cur.execute("DROP TABLE IF EXISTS entradas_almacen")
+            cur.execute("DROP TABLE IF EXISTS inventario")
+            cur.execute("DROP TABLE IF EXISTS logs")
+            conn.commit()
+            conn.close()
+            st.rerun()
     
     if st.sidebar.button("🔴 Cerrar Sesión", use_container_width=True):
         registrar_log(st.session_state.usuario_actual, "Cierre de Sesión")
