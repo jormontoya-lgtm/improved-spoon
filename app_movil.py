@@ -7,7 +7,7 @@ import base64
 from docx import Document
 
 # --- CONFIGURACIÓN ---
-USUARIOS_PERMITIDOS = {"jorge": "1234", "supervisor": "obra2026", "Gerardo": "123456", "Julie": "789011", "Diego": "121314"}
+USUARIOS_PERMITIDOS = {"jorge": "1234", "supervisor": "obra2026", "Gerardo": "123456", "Julie": "101112", "Diego": "202122"}
 STOCK_MINIMO = 20 
 
 st.set_page_config(page_title="SGO-H Pro", layout="centered")
