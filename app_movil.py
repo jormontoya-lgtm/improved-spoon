@@ -116,35 +116,57 @@ else:
 
     elif menu == "Reportar Avance":
         st.header("📝 Nuevo Reporte de Obra")
-        st.info(f"👷 **Operador:** {st.session_state.usuario_actual.capitalize()}")
-        tra = st.text_input("Tramo / Ubicación")
-        act = st.selectbox("Actividad", ["Excavación", "Instalación de Tubería", "Relleno", "Armado"])
         
-        mat_f = "N/A"
-        if act == "Instalación de Tubería":
-            mat_f = st.selectbox("Diámetro:", ['Tubo PVC 2"', 'Tubo PVC 4"', 'Tubo PVC 6"', 'Tubo PVC 8"', 'Tubo PVC 10"', 'Tubo PVC 12"'])
-        elif act == "Relleno": mat_f = "Cemento (Sacos)"
-        elif act == "Armado": mat_f = "Varilla 1/2"
+        # Inicializamos un estado para saber si acabamos de enviar un reporte
+        if 'reporte_enviado' not in st.session_state:
+            st.session_state.reporte_enviado = False
 
-        ava = st.number_input("Cantidad / Metros:", min_value=0.0, step=0.1)
-        obs = st.text_area("🗒️ Observaciones")
-        archivos = st.file_uploader("📸 Fotos", accept_multiple_files=True, type=['png', 'jpg', 'jpeg'])
-        
-        if st.button("💾 GUARDAR REPORTE", use_container_width=True):
-            f_str = "|".join([base64.b64encode(a.getvalue()).decode() for a in archivos[:5]])
-            conn = conectar(); cur = conn.cursor()
-            cur.execute("""INSERT INTO reportes 
-                           (fecha, operador, tramo, actividad, material, avance, observaciones, fotos, editado) 
-                           VALUES (?,?,?,?,?,?,?,?,?)""", 
-                        (obtener_hora_local().strftime("%Y-%m-%d %H:%M:%S"), 
-                         st.session_state.usuario_actual.capitalize(), tra, act, mat_f, ava, obs, f_str, "Original"))
+        if st.session_state.reporte_enviado:
+            # MOSTRAR LEYENDA DE AGRADECIMIENTO
+            st.success("✅ Reporte enviado, gracias por tu compromiso")
+            if st.button("Hacer otro reporte"):
+                st.session_state.reporte_enviado = False
+                st.rerun()
+        else:
+            # FORMULARIO DE REPORTE
+            st.info(f"👷 **Operador:** {st.session_state.usuario_actual.capitalize()}")
             
-            if mat_f != "N/A":
-                cur.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE material = ?", (ava, mat_f))
-            conn.commit(); conn.close()
-            registrar_log(st.session_state.usuario_actual, f"Reporte en {tra}")
-            st.success("¡Reporte guardado!")
+            tra = st.text_input("Tramo / Ubicación", key="input_tramo")
+            act = st.selectbox("Actividad", ["Excavación", "Instalación de Tubería", "Relleno", "Armado"], key="input_act")
+            
+            mat_f = "N/A"
+            if act == "Instalación de Tubería":
+                mat_f = st.selectbox("Diámetro:", ['Tubo PVC 2"', 'Tubo PVC 4"', 'Tubo PVC 6"', 'Tubo PVC 8"', 'Tubo PVC 10"', 'Tubo PVC 12"'], key="input_mat")
+            elif act == "Relleno": mat_f = "Cemento (Sacos)"
+            elif act == "Armado": mat_f = "Varilla 1/2"
 
+            ava = st.number_input("Cantidad / Metros:", min_value=0.0, step=0.1, key="input_avance")
+            obs = st.text_area("🗒️ Observaciones", placeholder="Detalles imprevistos...", key="input_obs")
+            archivos = st.file_uploader("📸 Fotos", accept_multiple_files=True, type=['png', 'jpg', 'jpeg'], key="input_fotos")
+            
+            if st.button("💾 GUARDAR REPORTE", use_container_width=True):
+                if tra and ava > 0:
+                    # PROCESO DE GUARDADO
+                    f_str = "|".join([base64.b64encode(a.getvalue()).decode() for a in archivos[:5]])
+                    conn = conectar(); cur = conn.cursor()
+                    cur.execute("""INSERT INTO reportes 
+                                   (fecha, operador, tramo, actividad, material, avance, observaciones, fotos, editado) 
+                                   VALUES (?,?,?,?,?,?,?,?,?)""", 
+                                (obtener_hora_local().strftime("%Y-%m-%d %H:%M:%S"), 
+                                 st.session_state.usuario_actual.capitalize(), tra, act, mat_f, ava, obs, f_str, "Original"))
+                    
+                    if mat_f != "N/A":
+                        cur.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE material = ?", (ava, mat_f))
+                    
+                    conn.commit(); conn.close()
+                    registrar_log(st.session_state.usuario_actual, f"Reporte guardado en {tra}")
+                    
+                    # ACTIVAR LEYENDA Y LIMPIAR
+                    st.session_state.reporte_enviado = True
+                    st.rerun()
+                else:
+                    st.warning("Por favor, completa el tramo y la cantidad antes de guardar.")
+                    
     elif menu == "Entrada Almacén":
         st.header("📥 Entrada Almacén")
         with st.form("form_ent"):
