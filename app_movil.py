@@ -51,6 +51,15 @@ if 'autenticado' not in st.session_state:
     st.session_state.autenticado = False
 
 if not st.session_state.autenticado:
+    # Creamos columnas para centrar el logo mediano
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        # 'use_container_width=True' lo ajusta al ancho de la columna central
+        st.image("logo.png", width=250) 
+        
+    st.title("🚧 Acceso SGO-H")
+    u = st.text_input("Usuario")
+    # ... resto del código de login ...
     st.title("🚧 Acceso SGO-H")
     u = st.text_input("Usuario")
     p = st.text_input("Contraseña", type="password")
@@ -67,6 +76,11 @@ if not st.session_state.autenticado:
 else:
     st.sidebar.title(f"👤 {st.session_state.usuario_actual.capitalize()}")
     
+    # Logo pequeño en la parte superior de la barra lateral
+    st.sidebar.image("logo.png", width=120) 
+    st.sidebar.title(f"👤 {st.session_state.usuario_actual.capitalize()}")
+    
+    # ... resto del código del menú y navegación ...
     menu_opciones = ["Reportar Avance", "Entrada Almacén", "Ver Inventario", "Exportar"]
     if st.session_state.usuario_actual == "jorge":
         menu_opciones.insert(0, "Panel de Control Jorge")
