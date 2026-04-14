@@ -7,7 +7,7 @@ import base64
 from docx import Document
 
 # --- CONFIGURACIÓN ---
-USUARIOS_PERMITIDOS = {"jorge": "1234", "supervisor": "obra2026"}
+USUARIOS_PERMITIDOS = {"jorge": "1234", "supervisor": "obra2026", "Julie": "123456", "Gerardo": "123456"}
 STOCK_MINIMO = 20 
 
 st.set_page_config(page_title="SGO-H Pro", layout="centered")
@@ -182,20 +182,58 @@ else:
         conn = conectar()
         df_r = pd.read_sql_query("SELECT * FROM reportes", conn)
         df_i = pd.read_sql_query("SELECT * FROM inventario", conn)
-        df_logs = pd.read_sql_query("SELECT * FROM logs", conn)
         conn.close()
 
         fecha_str = obtener_hora_local().strftime("%Y-%m-%d")
 
-        # Excel
+        # --- EXCEL (Disponible para todos) ---
+        st.subheader("📁 Reportes Operativos")
         out_ex = BytesIO()
         with pd.ExcelWriter(out_ex, engine='openpyxl') as wr:
             df_r.drop(columns=['fotos']).to_excel(wr, index=False, sheet_name='Reportes')
+            # Detalle de materiales usados
             df_r[df_r['material'] != "N/A"][['fecha', 'material', 'avance', 'tramo']].to_excel(wr, index=False, sheet_name='Disposicion')
-        st.download_button("📥 DESCARGAR EXCEL", out_ex.getvalue(), f"Reporte_{fecha_str}.xlsx")
+        
+        st.download_button(
+            label="📥 DESCARGAR EXCEL DE OBRA", 
+            data=out_ex.getvalue(), 
+            file_name=f"Reporte_{fecha_str}.xlsx",
+            use_container_width=True
+        )
 
-        # Word Logs
-        doc = Document(); doc.add_heading('Logs de Actividad', 0)
-        for _, r in df_logs.iterrows(): doc.add_paragraph(f"{r['fecha']} - {r['usuario']}: {r['accion']}")
-        out_wd = BytesIO(); doc.save(out_wd)
-        st.download_button("📄 EXPORTAR LOGS (WORD)", out_wd.getvalue(), f"Logs_{fecha_str}.docx")
+        # --- WORD (SOLO PARA JORGE) ---
+        if st.session_state.usuario_actual == "jorge":
+            st.divider()
+            st.subheader("🔐 Auditoría y Logs (Privado)")
+            
+            conn = conectar()
+            df_logs = pd.read_sql_query("SELECT * FROM logs ORDER BY id DESC", conn)
+            conn.close()
+
+            doc = Document()
+            doc.add_heading('Registro de Actividad de Usuarios', 0)
+            
+            # Formato de tabla en Word
+            table = doc.add_table(rows=1, cols=3)
+            hdr_cells = table.rows[0].cells
+            hdr_cells[0].text = 'Fecha'
+            hdr_cells[1].text = 'Usuario'
+            hdr_cells[2].text = 'Acción'
+
+            for _, r in df_logs.iterrows():
+                row_cells = table.add_row().cells
+                row_cells[0].text = str(r['fecha'])
+                row_cells[1].text = str(r['usuario'])
+                row_cells[2].text = str(r['accion'])
+
+            out_wd = BytesIO()
+            doc.save(out_wd)
+            
+            st.download_button(
+                label="📄 EXPORTAR LOGS (WORD)", 
+                data=out_wd.getvalue(), 
+                file_name=f"Logs_Seguridad_{fecha_str}.docx",
+                use_container_width=True
+            )
+        else:
+            st.info("ℹ️ Los registros de auditoría en Word solo están disponibles para el administrador.")
