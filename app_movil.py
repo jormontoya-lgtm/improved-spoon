@@ -51,19 +51,19 @@ if 'autenticado' not in st.session_state:
     st.session_state.autenticado = False
 
 if not st.session_state.autenticado:
-    # Creamos columnas para centrar el logo mediano
+    # 1. LOGO MEDIANO (Solo aquí)
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        # 'use_container_width=True' lo ajusta al ancho de la columna central
+        # Asegúrate de que el nombre del archivo sea el correcto
         st.image("logo.png", width=250) 
         
     st.title("🚧 Acceso SGO-H")
-    u = st.text_input("Usuario")
-    # ... resto del código de login ...
-    st.title("🚧 Acceso SGO-H")
-    u = st.text_input("Usuario")
-    p = st.text_input("Contraseña", type="password")
-    if st.button("Entrar", use_container_width=True):
+    
+    # 2. CAMPOS DE TEXTO (Asegúrate de que NO estén repetidos más abajo)
+    u = st.text_input("Usuario", key="login_user")
+    p = st.text_input("Contraseña", type="password", key="login_pass")
+    
+    if st.button("Entrar", use_container_width=True, key="btn_entrar_login"):
         if u in USUARIOS_PERMITIDOS and USUARIOS_PERMITIDOS[u] == p:
             st.session_state.autenticado = True
             st.session_state.usuario_actual = u
@@ -74,10 +74,9 @@ if not st.session_state.autenticado:
 
 # --- APP PRINCIPAL (USUARIO AUTENTICADO) ---
 else:
-    st.sidebar.title(f"👤 {st.session_state.usuario_actual.capitalize()}")
-    
-    # Logo pequeño en la parte superior de la barra lateral
+    # Logo pequeño en la barra lateral
     st.sidebar.image("logo.png", width=120) 
+    # ... (el resto de tu código de la barra lateral y menús)
     st.sidebar.title(f"👤 {st.session_state.usuario_actual.capitalize()}")
     
     # ... resto del código del menú y navegación ...
