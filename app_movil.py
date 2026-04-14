@@ -96,12 +96,15 @@ else:
 
     elif menu == "Reportar Avance":
         st.header("📝 Nuevo Reporte de Obra")
+        
+        # --- LEYENDA DE ENVIADO ---
         if st.session_state.get('rep_listo', False):
             st.success("✅ Reporte enviado, gracias por tu compromiso")
             if st.button("Hacer otro reporte"):
                 st.session_state.rep_listo = False
                 st.rerun()
         else:
+            # --- FORMULARIO DE REPORTE ---
             tra = st.text_input("Tramo / Ubicación")
             act = st.selectbox("Actividad", ["Excavación", "Instalación de Tubería", "Relleno", "Armado"])
             mat_f = "N/A"
@@ -109,22 +112,73 @@ else:
                 mat_f = st.selectbox("Diámetro:", ['Tubo PVC 2"', 'Tubo PVC 4"', 'Tubo PVC 6"', 'Tubo PVC 8"', 'Tubo PVC 10"', 'Tubo PVC 12"'])
             elif act == "Relleno": mat_f = "Cemento (Sacos)"
             elif act == "Armado": mat_f = "Varilla 1/2"
+            
             ava = st.number_input("Cantidad / Metros:", min_value=0.0)
-            obs = st.text_area("🗒️ Observaciones", placeholder="Escriba aquí cualquier detalle relevante...")
-            archivos = st.file_uploader("📸 Fotos", accept_multiple_files=True, type=['png', 'jpg'])
+            obs = st.text_area("🗒️ Observaciones", placeholder="Detalles imprevistos...")
+            archivos = st.file_uploader("📸 Fotos", accept_multiple_files=True, type=['png', 'jpg', 'jpeg'])
             
             if st.button("💾 GUARDAR REPORTE", use_container_width=True):
                 if tra and ava >= 0:
                     f_str = "|".join([base64.b64encode(a.getvalue()).decode() for a in archivos[:3]])
                     conn = conectar(); cur = conn.cursor()
-                    cur.execute("INSERT INTO reportes (fecha, operador, tramo, actividad, material, avance, observaciones, fotos) VALUES (?,?,?,?,?,?,?,?)",
-                                (obtener_hora_local().strftime("%Y-%m-%d %H:%M"), st.session_state.usuario_actual, tra, act, mat_f, ava, obs, f_str))
+                    cur.execute("""INSERT INTO reportes 
+                                   (fecha, operador, tramo, actividad, material, avance, observaciones, fotos) 
+                                   VALUES (?,?,?,?,?,?,?,?)""",
+                                (obtener_hora_local().strftime("%Y-%m-%d %H:%M"), 
+                                 st.session_state.usuario_actual, tra, act, mat_f, ava, obs, f_str))
+                    
                     if mat_f != "N/A":
                         cur.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE material = ?", (ava, mat_f))
+                    
                     conn.commit(); conn.close()
                     st.session_state.rep_listo = True
                     st.rerun()
-                else: st.warning("Por favor completa el tramo.")
+                else:
+                    st.warning("Por favor, completa al menos el tramo.")
+
+        # --- SECCIÓN: VER MIS REPORTES (HISTORIAL PERSONAL CON FOTOS) ---
+        st.divider()
+        if st.button("🔍 Ver mis reportes enviados", use_container_width=True):
+            st.session_state.ver_historial_personal = not st.session_state.get('ver_historial_personal', False)
+
+        if st.session_state.get('ver_historial_personal', False):
+            st.subheader(f"📂 Mis Reportes - {st.session_state.usuario_actual.capitalize()}")
+            conn = conectar()
+            # Traemos también la columna 'fotos'
+            query = "SELECT fecha, tramo, actividad, material, avance, observaciones, fotos FROM reportes WHERE operador = ? ORDER BY id DESC"
+            df_personal = pd.read_sql_query(query, conn, params=(st.session_state.usuario_actual,))
+            conn.close()
+
+            if not df_personal.empty:
+                # Mostramos la tabla (sin la columna de fotos cruda porque es texto largo)
+                st.dataframe(df_personal.drop(columns=['fotos']), use_container_width=True)
+                
+                # --- GALERÍA DE FOTOS ABAJO DE LA TABLA ---
+                st.write("### 📸 Galería de fotos por reporte:")
+                for index, row in df_personal.iterrows():
+                    if row['fotos']:
+                        with st.expander(f"Fotos del {row['fecha']} - Tramo: {row['tramo']}"):
+                            # Separamos las fotos (están unidas por '|')
+                            lista_fotos = row['fotos'].split('|')
+                            cols_fotos = st.columns(len(lista_fotos))
+                            for i, foto_b64 in enumerate(lista_fotos):
+                                if foto_b64:
+                                    img_data = base64.b64decode(foto_b64)
+                                    cols_fotos[i].image(img_data, use_container_width=True)
+                
+                # Botón para descargar el Excel (el Excel no guarda imágenes, solo texto)
+                buf_p = BytesIO()
+                with pd.ExcelWriter(buf_p, engine='openpyxl') as wr:
+                    df_personal.drop(columns=['fotos']).to_excel(wr, index=False, sheet_name='Mis_Reportes')
+                
+                st.download_button(
+                    label="📥 Descargar mi historial en Excel",
+                    data=buf_p.getvalue(),
+                    file_name=f"Mis_Reportes_{st.session_state.usuario_actual}.xlsx",
+                    use_container_width=True
+                )
+            else:
+                st.info("Aún no has enviado ningún reporte.")
 
     elif menu == "Entrada Almacén":
         st.header("📥 Entrada Almacén")
