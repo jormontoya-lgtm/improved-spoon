@@ -13,6 +13,7 @@ USUARIOS_PERMITIDOS = {"jorge": "1234",
                         "Julie": "2608",
                         "Diego": "diego2026"}
 
+
 STOCK_MINIMO = 20 
 
 st.set_page_config(page_title="SGO-H Pro", layout="centered")
