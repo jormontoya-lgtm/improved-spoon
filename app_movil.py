@@ -9,7 +9,7 @@ from docx import Document
 # --- CONFIGURACIÓN ---
 USUARIOS_PERMITIDOS = {"jorge": "1234",
                         "supervisor": "obra2026", 
-                        "gerardo" : "gerardo2026", 
+                        "Gerardo" : "gerardo2026", 
                         "Julie": "2608",
                         "Diego": "diego2026"}
 
