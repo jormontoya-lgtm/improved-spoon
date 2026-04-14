@@ -7,12 +7,12 @@ import base64
 from docx import Document
 
 # --- CONFIGURACIÓN ---
-USUARIOS_PERMITIDOS = {"jorge": "1234", "supervisor": "obra2026", "Julie": "123456", "Gerardo": "123456"}
+USUARIOS_PERMITIDOS = {"jorge": "1234", "supervisor": "obra2026", "gerardo": "1234"}
 STOCK_MINIMO = 20 
 
 st.set_page_config(page_title="SGO-H Pro", layout="centered")
 
-# --- FUNCIONES DE BASE DE DATOS Y UTILIDADES ---
+# --- FUNCIONES DE BASE DE DATOS ---
 def conectar():
     conn = sqlite3.connect("sistema_obra.db")
     cur = conn.cursor()
@@ -22,7 +22,7 @@ def conectar():
                     observaciones TEXT, fotos TEXT, editado TEXT)''')
     cur.execute('''CREATE TABLE IF NOT EXISTS entradas_almacen 
                    (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT, material TEXT, cantidad REAL, 
-                    autoriza TEXT, verificado TEXT, fotos TEXT)''')
+                    autoriza TEXT, verificado TEXT)''')
     cur.execute('''CREATE TABLE IF NOT EXISTS inventario 
                    (id INTEGER PRIMARY KEY AUTOINCREMENT, material TEXT, cantidad REAL)''')
     cur.execute('''CREATE TABLE IF NOT EXISTS logs 
@@ -46,215 +46,144 @@ def registrar_log(usuario, accion):
 def obtener_hora_local():
     return (datetime.utcnow() - timedelta(hours=6))
 
-# --- LÓGICA DE AUTENTICACIÓN ---
+# --- AUTENTICACIÓN ---
 if 'autenticado' not in st.session_state:
     st.session_state.autenticado = False
 
 if not st.session_state.autenticado:
-    # 1. LOGO MEDIANO (Solo aquí)
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        # Asegúrate de que el nombre del archivo sea el correcto
-        st.image("logo.png", width=250) 
+        try: st.image("logo.png", width=250)
+        except: st.info("Empresa Logo")
         
     st.title("🚧 Acceso SGO-H")
+    u = st.text_input("Usuario", key="user_login")
+    p = st.text_input("Contraseña", type="password", key="pass_login")
     
-    # 2. CAMPOS DE TEXTO (Asegúrate de que NO estén repetidos más abajo)
-    u = st.text_input("Usuario", key="login_user")
-    p = st.text_input("Contraseña", type="password", key="login_pass")
-    
-    if st.button("Entrar", use_container_width=True, key="btn_entrar_login"):
-        if u in USUARIOS_PERMITIDOS and USUARIOS_PERMITIDOS[u] == p:
+    if st.button("Entrar", use_container_width=True):
+        if u.lower() in USUARIOS_PERMITIDOS and USUARIOS_PERMITIDOS[u.lower()] == p:
             st.session_state.autenticado = True
-            st.session_state.usuario_actual = u
+            st.session_state.usuario_actual = u.lower()
             registrar_log(u, "Inicio de Sesión")
             st.rerun()
         else:
-            st.error("Usuario o contraseña incorrectos")
+            st.error("Credenciales incorrectas")
 
-# --- APP PRINCIPAL (USUARIO AUTENTICADO) ---
+# --- APP PRINCIPAL ---
 else:
-    # Logo pequeño en la barra lateral
-    st.sidebar.image("logo.png", width=120) 
-    # ... (el resto de tu código de la barra lateral y menús)
+    # Sidebar con Logo Pequeño
+    try: st.sidebar.image("logo.png", width=100)
+    except: pass
     st.sidebar.title(f"👤 {st.session_state.usuario_actual.capitalize()}")
     
-    # ... resto del código del menú y navegación ...
-    menu_opciones = ["Reportar Avance", "Entrada Almacén", "Ver Inventario", "Exportar"]
+    menu_ops = ["Reportar Avance", "Entrada Almacén", "Ver Inventario", "Exportar"]
     if st.session_state.usuario_actual == "jorge":
-        menu_opciones.insert(0, "Panel de Control Jorge")
+        menu_ops.insert(0, "Panel de Control Jorge")
     
-    menu = st.sidebar.selectbox("Ir a:", menu_opciones)
+    menu = st.sidebar.selectbox("Ir a:", menu_ops)
     st.sidebar.divider()
 
-    # Botón de Cerrar Sesión (Único)
-    if st.sidebar.button("🔴 Cerrar Sesión", use_container_width=True, key="logout_main"):
-        registrar_log(st.session_state.usuario_actual, "Cierre de Sesión")
+    if st.sidebar.button("🔴 Cerrar Sesión", use_container_width=True):
         st.session_state.autenticado = False
         st.rerun()
 
-    # Botón Resetear (Solo Jorge)
     if st.session_state.usuario_actual == "jorge":
-        st.sidebar.divider()
-        if st.sidebar.button("🗑️ RESETEAR PARA JUNTA", use_container_width=True, key="reset_admin"):
+        if st.sidebar.button("🗑️ RESETEAR TODO", use_container_width=True):
             conn = conectar(); cur = conn.cursor()
-            cur.execute("DROP TABLE IF EXISTS reportes")
-            cur.execute("DROP TABLE IF EXISTS entradas_almacen")
-            cur.execute("DROP TABLE IF EXISTS inventario")
-            cur.execute("DROP TABLE IF EXISTS logs")
-            conn.commit(); conn.close()
-            st.rerun()
+            cur.execute("DROP TABLE IF EXISTS reportes"); cur.execute("DROP TABLE IF EXISTS inventario")
+            cur.execute("DROP TABLE IF EXISTS entradas_almacen"); cur.execute("DROP TABLE IF EXISTS logs")
+            conn.commit(); conn.close(); st.rerun()
 
-    # --- NAVEGACIÓN DE SECCIONES ---
-
+    # --- LÓGICA DE CADA SECCIÓN ---
+    
     if menu == "Panel de Control Jorge":
-        st.header("📋 Historial de Avances")
+        st.header("📋 Historial Administrativo")
         conn = conectar()
-        df_jorge = pd.read_sql_query("SELECT fecha, operador, tramo, actividad, material, avance FROM reportes ORDER BY fecha DESC", conn)
+        df = pd.read_sql_query("SELECT fecha, operador, tramo, actividad, avance FROM reportes ORDER BY fecha DESC", conn)
         conn.close()
-        st.dataframe(df_jorge, use_container_width=True)
+        st.dataframe(df, use_container_width=True)
 
     elif menu == "Reportar Avance":
         st.header("📝 Nuevo Reporte de Obra")
-        
-        # Inicializamos un estado para saber si acabamos de enviar un reporte
-        if 'reporte_enviado' not in st.session_state:
-            st.session_state.reporte_enviado = False
-
-        if st.session_state.reporte_enviado:
-            # MOSTRAR LEYENDA DE AGRADECIMIENTO
+        if st.session_state.get('rep_listo', False):
             st.success("✅ Reporte enviado, gracias por tu compromiso")
             if st.button("Hacer otro reporte"):
-                st.session_state.reporte_enviado = False
+                st.session_state.rep_listo = False
                 st.rerun()
         else:
-            # FORMULARIO DE REPORTE
-            st.info(f"👷 **Operador:** {st.session_state.usuario_actual.capitalize()}")
-            
-            tra = st.text_input("Tramo / Ubicación", key="input_tramo")
-            act = st.selectbox("Actividad", ["Excavación", "Instalación de Tubería", "Relleno", "Armado"], key="input_act")
-            
+            tra = st.text_input("Tramo / Ubicación")
+            act = st.selectbox("Actividad", ["Excavación", "Instalación de Tubería", "Relleno", "Armado"])
             mat_f = "N/A"
             if act == "Instalación de Tubería":
-                mat_f = st.selectbox("Diámetro:", ['Tubo PVC 2"', 'Tubo PVC 4"', 'Tubo PVC 6"', 'Tubo PVC 8"', 'Tubo PVC 10"', 'Tubo PVC 12"'], key="input_mat")
+                mat_f = st.selectbox("Diámetro:", ['Tubo PVC 2"', 'Tubo PVC 4"', 'Tubo PVC 6"', 'Tubo PVC 8"', 'Tubo PVC 10"', 'Tubo PVC 12"'])
             elif act == "Relleno": mat_f = "Cemento (Sacos)"
             elif act == "Armado": mat_f = "Varilla 1/2"
-
-            ava = st.number_input("Cantidad / Metros:", min_value=0.0, step=0.1, key="input_avance")
-            obs = st.text_area("🗒️ Observaciones", placeholder="Detalles imprevistos...", key="input_obs")
-            archivos = st.file_uploader("📸 Fotos", accept_multiple_files=True, type=['png', 'jpg', 'jpeg'], key="input_fotos")
+            ava = st.number_input("Cantidad / Metros:", min_value=0.0)
+            archivos = st.file_uploader("📸 Fotos", accept_multiple_files=True, type=['png', 'jpg'])
             
             if st.button("💾 GUARDAR REPORTE", use_container_width=True):
                 if tra and ava > 0:
-                    # PROCESO DE GUARDADO
-                    f_str = "|".join([base64.b64encode(a.getvalue()).decode() for a in archivos[:5]])
+                    f_str = "|".join([base64.b64encode(a.getvalue()).decode() for a in archivos[:3]])
                     conn = conectar(); cur = conn.cursor()
-                    cur.execute("""INSERT INTO reportes 
-                                   (fecha, operador, tramo, actividad, material, avance, observaciones, fotos, editado) 
-                                   VALUES (?,?,?,?,?,?,?,?,?)""", 
-                                (obtener_hora_local().strftime("%Y-%m-%d %H:%M:%S"), 
-                                 st.session_state.usuario_actual.capitalize(), tra, act, mat_f, ava, obs, f_str, "Original"))
-                    
+                    cur.execute("INSERT INTO reportes (fecha, operador, tramo, actividad, material, avance, fotos) VALUES (?,?,?,?,?,?,?)",
+                                (obtener_hora_local().strftime("%Y-%m-%d %H:%M"), st.session_state.usuario_actual, tra, act, mat_f, ava, f_str))
                     if mat_f != "N/A":
                         cur.execute("UPDATE inventario SET cantidad = cantidad - ? WHERE material = ?", (ava, mat_f))
-                    
                     conn.commit(); conn.close()
-                    registrar_log(st.session_state.usuario_actual, f"Reporte guardado en {tra}")
-                    
-                    # ACTIVAR LEYENDA Y LIMPIAR
-                    st.session_state.reporte_enviado = True
+                    st.session_state.rep_listo = True
                     st.rerun()
-                else:
-                    st.warning("Por favor, completa el tramo y la cantidad antes de guardar.")
-                    
+                else: st.warning("Completa tramo y cantidad.")
+
     elif menu == "Entrada Almacén":
         st.header("📥 Entrada Almacén")
-        with st.form("form_ent"):
-            mat_e = st.selectbox("Material:", ['Tubo PVC 2"', 'Tubo PVC 4"', 'Tubo PVC 6"', 'Tubo PVC 8"', 'Tubo PVC 10"', 'Tubo PVC 12"', 'Cemento (Sacos)', 'Varilla 1/2'])
-            cant_e = st.number_input("Cantidad:", min_value=0.1)
-            aut_e = st.text_input("Autoriza:")
-            ver_e = st.text_input("Verifica:")
-            enviar_e = st.form_submit_button("REGISTRAR")
-            if enviar_e:
-                conn = conectar(); cur = conn.cursor()
-                cur.execute("INSERT INTO entradas_almacen (fecha, material, cantidad, autoriza, verificado) VALUES (?,?,?,?,?)",
-                            (obtener_hora_local().strftime("%Y-%m-%d %H:%M:%S"), mat_e, cant_e, aut_e, ver_e))
-                cur.execute("UPDATE inventario SET cantidad = cantidad + ? WHERE material = ?", (cant_e, mat_e))
-                conn.commit(); conn.close()
-                registrar_log(st.session_state.usuario_actual, f"Entrada: {cant_e} de {mat_e}")
-                st.success("Stock actualizado")
+        if st.session_state.get('ent_listo', False):
+            st.success("✅ Entrada registrada, gracias por tu compromiso")
+            if st.button("Registrar otra entrada"):
+                st.session_state.ent_listo = False
+                st.rerun()
+        else:
+            with st.form("ent_f"):
+                m_e = st.selectbox("Material:", ['Tubo PVC 2"', 'Tubo PVC 4"', 'Tubo PVC 6"', 'Tubo PVC 8"', 'Tubo PVC 10"', 'Tubo PVC 12"', 'Cemento (Sacos)', 'Varilla 1/2'])
+                c_e = st.number_input("Cantidad:", min_value=0.1)
+                aut = st.text_input("Autoriza:")
+                if st.form_submit_button("REGISTRAR ENTRADA"):
+                    conn = conectar(); cur = conn.cursor()
+                    cur.execute("INSERT INTO entradas_almacen (fecha, material, cantidad, autoriza) VALUES (?,?,?,?)",
+                                (obtener_hora_local().strftime("%Y-%m-%d %H:%M"), m_e, c_e, aut))
+                    cur.execute("UPDATE inventario SET cantidad = cantidad + ? WHERE material = ?", (c_e, m_e))
+                    conn.commit(); conn.close()
+                    st.session_state.ent_listo = True
+                    st.rerun()
 
     elif menu == "Ver Inventario":
         st.header("📦 Stock Actual")
-        conn = conectar(); df_inv = pd.read_sql_query("SELECT material, cantidad FROM inventario", conn); conn.close()
-        
-        # Alerta Stock Bajo
-        bajos = df_inv[df_inv['cantidad'] < STOCK_MINIMO]
-        if not bajos.empty:
-            st.error("⚠️ MATERIAL BAJO MÍNIMO")
+        conn = conectar(); df_i = pd.read_sql_query("SELECT material, cantidad FROM inventario", conn); conn.close()
+        if (df_i['cantidad'] < STOCK_MINIMO).any():
+            st.error("⚠️ STOCK BAJO")
             st.markdown('<audio src="https://www.soundjay.com/buttons/beep-01a.mp3" autoplay></audio>', unsafe_allow_html=True)
-        
-        def resaltar(val):
-            return 'background-color: #ff4b4b; color: white' if val < STOCK_MINIMO else ''
-        
-        st.dataframe(df_inv.style.map(resaltar, subset=['cantidad']), use_container_width=True)
+        def color_inv(v): return 'background-color: #ff4b4b; color: white' if v < STOCK_MINIMO else ''
+        st.dataframe(df_i.style.map(color_inv, subset=['cantidad']), use_container_width=True)
 
     elif menu == "Exportar":
-        st.header("📊 Exportar Datos")
-        conn = conectar()
-        df_r = pd.read_sql_query("SELECT * FROM reportes", conn)
-        df_i = pd.read_sql_query("SELECT * FROM inventario", conn)
-        conn.close()
+        st.header("📊 Gestión de Informes")
+        if st.button("🚀 ENVIAR INFORME", use_container_width=True):
+            registrar_log(st.session_state.usuario_actual, "Informe Generado")
+            st.session_state.exp_listo = True
+            st.success("Reporte enviado y almacenado.")
 
-        fecha_str = obtener_hora_local().strftime("%Y-%m-%d")
-
-        # --- EXCEL (Disponible para todos) ---
-        st.subheader("📁 Reportes Operativos")
-        out_ex = BytesIO()
-        with pd.ExcelWriter(out_ex, engine='openpyxl') as wr:
-            df_r.drop(columns=['fotos']).to_excel(wr, index=False, sheet_name='Reportes')
-            # Detalle de materiales usados
-            df_r[df_r['material'] != "N/A"][['fecha', 'material', 'avance', 'tramo']].to_excel(wr, index=False, sheet_name='Disposicion')
-        
-        st.download_button(
-            label="📥 DESCARGAR EXCEL DE OBRA", 
-            data=out_ex.getvalue(), 
-            file_name=f"Reporte_{fecha_str}.xlsx",
-            use_container_width=True
-        )
-
-        # --- WORD (SOLO PARA JORGE) ---
-        if st.session_state.usuario_actual == "jorge":
-            st.divider()
-            st.subheader("🔐 Auditoría y Logs (Privado)")
-            
+        if st.session_state.get('exp_listo', False):
             conn = conectar()
-            df_logs = pd.read_sql_query("SELECT * FROM logs ORDER BY id DESC", conn)
+            df_r = pd.read_sql_query("SELECT * FROM reportes", conn)
+            # Excel
+            buffer = BytesIO()
+            with pd.ExcelWriter(buffer, engine='openpyxl') as wr:
+                df_r.drop(columns=['fotos']).to_excel(wr, index=False, sheet_name='Bitacora')
+            st.download_button("📥 Descargar Excel", buffer.getvalue(), "Reporte.xlsx", use_container_width=True)
+            # Word (Solo Jorge)
+            if st.session_state.usuario_actual == "jorge":
+                df_l = pd.read_sql_query("SELECT * FROM logs", conn)
+                doc = Document(); doc.add_heading('Auditoría', 0)
+                for _, r in df_l.iterrows(): doc.add_paragraph(f"{r['fecha']} - {r['usuario']}: {r['accion']}")
+                b_w = BytesIO(); doc.save(b_w)
+                st.download_button("📄 Descargar Word (Auditoría)", b_w.getvalue(), "Auditoria.docx", use_container_width=True)
             conn.close()
-
-            doc = Document()
-            doc.add_heading('Registro de Actividad de Usuarios', 0)
-            
-            # Formato de tabla en Word
-            table = doc.add_table(rows=1, cols=3)
-            hdr_cells = table.rows[0].cells
-            hdr_cells[0].text = 'Fecha'
-            hdr_cells[1].text = 'Usuario'
-            hdr_cells[2].text = 'Acción'
-
-            for _, r in df_logs.iterrows():
-                row_cells = table.add_row().cells
-                row_cells[0].text = str(r['fecha'])
-                row_cells[1].text = str(r['usuario'])
-                row_cells[2].text = str(r['accion'])
-
-            out_wd = BytesIO()
-            doc.save(out_wd)
-            
-            st.download_button(
-                label="📄 EXPORTAR LOGS (WORD)", 
-                data=out_wd.getvalue(), 
-                file_name=f"Logs_Seguridad_{fecha_str}.docx",
-                use_container_width=True
-            )
-        
