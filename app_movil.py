@@ -235,5 +235,4 @@ else:
                 file_name=f"Logs_Seguridad_{fecha_str}.docx",
                 use_container_width=True
             )
-        else:
-            st.info("ℹ️ Los registros de auditoría en Word solo están disponibles para el administrador.")
+        
